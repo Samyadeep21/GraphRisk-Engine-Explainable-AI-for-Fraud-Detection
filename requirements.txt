@@ -1,0 +1,14 @@
+torch
+torch-geometric
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+fastapi
+uvicorn
+stable-baselines3
+gymnasium
+networkx
+plotly
+streamlit
