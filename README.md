@@ -208,8 +208,8 @@ Used card-based layout + gradients
 🤖 Model comparison panel
 📊 Feature importance visualization
 🌐 Deploy on cloud (Streamlit Cloud / Vercel)
-👨‍💻 Author
 
+👨‍💻 Author
 Samyadeep Saha
 M.Tech CSE | AI + Cybersecurity Enthusiast
 
