@@ -1,1 +1,7 @@
 "data/transactions.csv" 
+data/
+*.csv
+venom_env/
+__pycache__/
+*.pt
+*.zip

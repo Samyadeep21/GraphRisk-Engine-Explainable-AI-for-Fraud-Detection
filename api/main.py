@@ -3,97 +3,112 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import pandas as pd, torch, io, json
+import pandas as pd
+import torch
+import io
 import numpy as np
-from stable_baselines3 import DQN
 
-from utils.preprocessing import load_and_preprocess
+from stable_baselines3 import DQN
+from torch_geometric.utils import degree
+
+from utils.preprocessing import _preprocess_df
 from graph.graph_builder import build_graph
 from model.gnn_encoder import VenomGNN
 
+# ───────────────────────── INIT
 app = FastAPI(
     title="🕸️ VENOM API",
-    description="Vigilant Engine for Network-based Observation of Money fraud",
-    version="1.0.0"
+    version="4.2.0"
 )
-app.add_middleware(CORSMiddleware, allow_origins=["*"],
-                   allow_methods=["*"], allow_headers=["*"])
 
-# Load trained models on startup
-gnn = VenomGNN(in_channels=8, hidden_channels=64, out_channels=2)
-gnn.load_state_dict(torch.load("model/venom_gnn.pt",
-                                map_location="cpu"))
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+# ───────────────────────── LOAD FEATURE DIM
+with open("model/feature_dim.txt", "r") as f:
+    FEATURE_DIM = int(f.read().strip())
+
+print(f"✅ Loaded FEATURE_DIM: {FEATURE_DIM}")
+
+# ───────────────────────── LOAD MODELS
+gnn = VenomGNN(
+    in_channels=FEATURE_DIM,
+    hidden_channels=64,
+    out_channels=2
+)
+
+gnn.load_state_dict(torch.load("model/venom_gnn.pt", map_location="cpu"))
 gnn.eval()
-dqn = DQN.load("model/venom_dqn")
 
+print("✅ GNN model loaded")
+
+dqn = DQN.load("model/venom_dqn")
+print("✅ DQN model loaded")
+
+# ───────────────────────── ROUTES
 @app.get("/")
 def root():
-    return {"message": "🕸️ VENOM is live!", "version": "1.0.0"}
+    return {"message": "VENOM API Live"}
 
-@app.get("/health")
-def health():
-    return {"status": "healthy", "models_loaded": True}
-
+# ───────────────────────── ANALYZE
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     try:
         contents = await file.read()
         df = pd.read_csv(io.BytesIO(contents), nrows=50000)
-        df_clean = load_and_preprocess.__wrapped__(df) \
-            if hasattr(load_and_preprocess, '__wrapped__') \
-            else _preprocess_df(df)
-        graph, node_map = build_graph(df_clean)
 
+        df_clean = _preprocess_df(df)
+        graph, _ = build_graph(df_clean)
+
+        # SAME FEATURE ENGINEERING AS TRAINING
+        deg = degree(graph.edge_index[0], num_nodes=graph.x.size(0)).view(-1, 1)
+        graph.x = torch.cat([graph.x, deg], dim=1)
+
+        # GNN
         with torch.no_grad():
-            probs = torch.softmax(
-                gnn(graph.x, graph.edge_index), dim=1
-            )
-            risk_scores = probs[:, 1].numpy()
+            logits = gnn(graph.x, graph.edge_index)
+            probs = torch.softmax(logits, dim=1)
 
-        results, flagged_nodes = [], []
-        for i, score in enumerate(risk_scores[:500]):
-            action, _ = dqn.predict(
-                np.array([[score]], dtype=np.float32)
-            )
-            entry = {
-                "node_id": i,
-                "risk_score": round(float(score), 4),
-                "decision": "FLAGGED" if int(action) == 1 else "APPROVED",
-                "risk_level": (
-                    "HIGH" if score > 0.7 else
-                    "MEDIUM" if score > 0.4 else "LOW"
-                )
-            }
-            results.append(entry)
-            if int(action) == 1:
-                flagged_nodes.append(entry)
+            risk_scores = probs[:, 1].cpu().numpy()
+
+        results = []
+
+        for i in range(min(200, len(risk_scores))):
+
+            score = float(risk_scores[i])
+
+            # RL INPUT (correct)
+            state = np.array([score], dtype=np.float32)
+
+            action, _ = dqn.predict(state, deterministic=True)
+
+            decision = "FLAGGED" if int(action) == 1 else "APPROVED"
+
+            results.append({
+                "node_id": int(i),
+                "risk_score": round(score, 4),
+                "decision": decision
+            })
+
+        # ✅ FIXED SUMMARY
+        total = len(results)
+        flagged = sum(r["decision"] == "FLAGGED" for r in results)
+        flagged_nodes = [r for r in results if r["decision"] == "FLAGGED"]
 
         return {
             "summary": {
-                "total_analyzed": len(results),
-                "flagged": len(flagged_nodes),
-                "approved": len(results) - len(flagged_nodes),
-                "flag_rate": round(len(flagged_nodes)/len(results)*100, 2)
+                "total_analyzed": total,
+                "flagged": flagged,
+                "approved": total - flagged,
+                "flag_rate": round(flagged / total * 100, 2)
             },
-            "flagged_nodes": flagged_nodes[:50],
-            "all_results": results[:200]
+            "all_results": results,
+            "flagged_nodes": flagged_nodes
         }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-def _preprocess_df(df):
-    """Inline preprocessing for API use"""
-    from sklearn.preprocessing import LabelEncoder, StandardScaler
-    le, sc = LabelEncoder(), StandardScaler()
-    df = df.dropna(subset=['nameOrig','nameDest','amount'])
-    df['type_encoded']     = le.fit_transform(df['type'])
-    df['typology_encoded'] = le.fit_transform(
-        df['laundering_typology'].fillna('normal')
-    )
-    df['amount_scaled']    = sc.fit_transform(df[['amount']])
-    df['fraud_probability'] = df.get('fraud_probability', 0)
-    df['is_suspicious'] = (
-        (df.get('isFraud', 0) == 1) |
-        (df.get('isMoneyLaundering', 0) == 1)
-    ).astype(int)
-    return df
