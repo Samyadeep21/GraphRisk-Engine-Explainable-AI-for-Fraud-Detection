@@ -43,6 +43,17 @@ Risk Scores + Decisions
 ↓
 Streamlit Dashboard (UI Layer)
 
+## 🧠 System Architecture
+
+![Graph Model](images/graph.png)
+![GNN Encoder](images/gnn_encoder.png)
+
+
+## 📊 Data Insights
+
+![Amount vs Fraud](images/preprocessing.png)
+![Transaction Type](images/train3.png)
+
 
 ---
 
@@ -59,6 +70,20 @@ Streamlit Dashboard (UI Layer)
 ---
 
 ### 🔹 2. Interactive Dashboard
+
+## 📊 Dashboard Preview
+
+### 🔹 Main Interface
+![UI](images/dashboard2.png)
+
+### 🔹 Risk Distribution
+![Risk](images/newplot.png)
+
+### 🔹 Explainability Panel
+![Explainability](images/dashboard3.png)
+
+### 🔹 Transactions Table
+![Table](images/transactiontable.png)
 
 #### 📊 Risk Distribution
 - Histogram with segmented risk levels

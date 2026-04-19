@@ -4,4 +4,9 @@ data/
 venom_env/
 __pycache__/
 *.pt
+*.zipvenom_env/
+__pycache__/
+*.pyc
+*.pt
 *.zip
+data/*.csv
