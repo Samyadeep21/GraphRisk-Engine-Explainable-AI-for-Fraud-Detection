@@ -74,6 +74,8 @@ Streamlit Dashboard (UI Layer)
 ## 📊 Dashboard Preview
 
 ### 🔹 Main Interface
+![UI](images/dashboard1.png)
+
 ![UI](images/dashboard2.png)
 
 ### 🔹 Risk Distribution
